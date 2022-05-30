@@ -12,7 +12,7 @@
 #include "vertex/base_vertex.h"
 
 template <typename T>
-class BAL_Edge : public MegBA::BaseEdge<T> {
+class BalEdgeAnalyticalDerivatives : public MegBA::BaseEdge<T> {
  public:
   MegBA::JVD<T> forward() override {
     using MappedJVD = Eigen::Map<const MegBA::geo::JVD<T>>;
@@ -20,14 +20,11 @@ class BAL_Edge : public MegBA::BaseEdge<T> {
     MappedJVD angle_axisd{&Vertices[0].getEstimation()(0, 0), 3, 1};
     MappedJVD t{&Vertices[0].getEstimation()(3, 0), 3, 1};
     MappedJVD intrinsics{&Vertices[0].getEstimation()(6, 0), 3, 1};
+
     const auto& point_xyz = Vertices[1].getEstimation();
     const auto& obs_uv = this->getMeasurement();
-    auto R = MegBA::geo::AngleAxisToRotationKernelMatrix(angle_axisd);
-    Eigen::Matrix<MegBA::JetVector<T>, 3, 1> re_projection = R * point_xyz + t;
-    re_projection = -re_projection / re_projection(2);
-    // f, k1, k2 = intrinsics
-    auto fr = MegBA::geo::RadialDistortion(re_projection, intrinsics);
-    MegBA::JVD<T> error = fr * re_projection.head(2) - obs_uv;
+    MegBA::JVD<T>&& error = MegBA::geo::AnalyticalDerivativesKernelMatrix(
+        angle_axisd, t, intrinsics, point_xyz, obs_uv);
     return error;
   }
 };
@@ -122,7 +119,7 @@ int main(int argc, char* argv[]) {
             << ", solver_max_iter: " << solver_max_iter << ", tau: " << tau
             << ", epsilon1: " << epsilon1 << ", epsilon2: " << epsilon2
             << std::endl;
-  typedef double T;
+  typedef float T;
 
   std::ifstream fin(name);
 
@@ -205,7 +202,7 @@ int main(int argc, char* argv[]) {
   }
 
   for (int j = 0; j < num_observations; ++j) {
-    auto edgePtr = new BAL_Edge<T>;
+    auto edgePtr = new BalEdgeAnalyticalDerivatives<T>;
     edgePtr->appendVertex(&problem.getVertex(std::get<0>(edge[j])));
     edgePtr->appendVertex(&problem.getVertex(std::get<1>(edge[j])));
     edgePtr->setMeasurement(std::get<2>(std::move(edge[j])));
